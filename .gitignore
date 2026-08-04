@@ -1,0 +1,18 @@
+# virtual env
+myvenv/
+.venv/
+venv/
+
+# python
+__pycache__/
+*.pyc
+
+# large / generated data (fetched at runtime, see README)
+products.jsonl
+datasets/
+
+# per-annotator local state
+annotations.db
+
+# streamlit secrets (never commit tokens)
+.streamlit/secrets.toml
