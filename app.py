@@ -94,7 +94,11 @@ st.markdown(
 
 
 # ------------------------------ data ------------------------------
-@st.cache_data(show_spinner="Loading products...")
+# cache_resource (not cache_data) so every session shares the same list in
+# memory instead of each getting its own deep copy — with ~290MB of products,
+# a copy per concurrent user is what was pushing the app past its memory
+# limit and getting it killed.
+@st.cache_resource(show_spinner="Loading products...")
 def load_products(path_str: str):
     path = Path(path_str)
     if not path.exists():
@@ -106,6 +110,11 @@ def load_products(path_str: str):
             if line:
                 items.append(json.loads(line))
     return items
+
+
+@st.cache_resource(show_spinner=False)
+def build_index(path_str: str):
+    return {p["parent_asin"]: p for p in load_products(path_str)}
 
 
 def search(products, query, limit=40):
@@ -126,8 +135,15 @@ def search(products, query, limit=40):
 
 
 # --------------------------- annotations --------------------------
+# cache_resource so all sessions share one connection instead of leaking a
+# new one on every rerun (every widget interaction reruns the script).
+@st.cache_resource(show_spinner=False)
 def get_db():
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    # WAL + a busy timeout let concurrent readers/writers coexist instead of
+    # failing outright with "database is locked" under simultaneous users.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS annotations (
@@ -256,7 +272,7 @@ elif submitted:
     if not matches:
         st.warning("No product title contains those words. Try fewer or broader words.")
 
-index = {p["parent_asin"]: p for p in products}
+index = build_index(str(DATA_FILE))
 match_ids = st.session_state.get("matches")
 
 if match_ids and len(match_ids) > 1:
